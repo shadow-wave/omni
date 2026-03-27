@@ -4,6 +4,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Omni-Studio Pro | Liquid Evolution</title>
     
+    <!-- PRELOAD HEAVY PYTHON FILES (Instant Cloud Loading) -->
+    <link rel="preload" href="https://cdn.jsdelivr.net/pyodide/v0.29.3/full/pyodide.asm.wasm" as="fetch" crossorigin="anonymous">
+
     <!-- Prevent Theme Flash -->
     <script>
         if (localStorage.getItem('omni_theme') === 'light') {
@@ -55,11 +58,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/closebrackets.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/selection/active-line.min.js"></script>
     
-    <!-- 
-      LOCAL PYODIDE ENGINE (v0.29.3)
-      This points to the 'pyodide' folder you uploaded to GitHub.
-    -->
-    <script src="./pyodide/pyodide.js"></script>
+    <!-- HIGH SPEED CLOUD ENGINE (v0.29.3) -->
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.29.3/full/pyodide.js"></script>
     
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
@@ -169,9 +169,9 @@
         <div class="mt-12 w-64 px-4 space-y-3">
             <button id="boot-btn" class="w-full py-4 glass-panel rounded-2xl font-bold text-slate-500 dark:text-gray-400 flex items-center justify-center gap-3 cursor-wait">
                 <i class="fa-solid fa-circle-notch fa-spin text-indigo-500"></i>
-                Waking Kernel...
+                Waking Cloud Kernel...
             </button>
-            <div id="boot-status" class="text-center text-[9px] text-slate-500 dark:text-gray-500 mt-2 font-mono uppercase tracking-widest">Initializing sequence...</div>
+            <div id="boot-status" class="text-center text-[9px] text-slate-500 dark:text-gray-500 mt-2 font-mono uppercase tracking-widest">Downloading Core via CDN...</div>
         </div>
         <div class="absolute bottom-8 text-[10px] text-slate-400 dark:text-gray-700 font-bold uppercase tracking-widest">Aravind O K</div>
     </div>
@@ -440,69 +440,45 @@
             const bootStatus = document.getElementById("boot-status");
 
             try {
-                // ATTEMPT 1: Try Local GitHub Folder first
-                if (typeof loadPyodide === "undefined") throw new Error("Local script missing");
+                if(bootStatus) bootStatus.innerText = "Downloading Python Engine (Cached after 1st load)...";
                 
-                if(bootStatus) bootStatus.innerText = "Checking local repository...";
-                pyodide = await loadPyodide({ indexURL: "./pyodide/" });
+                // Initialize high-speed cloud engine
+                pyodide = await loadPyodide({
+                    indexURL: "https://cdn.jsdelivr.net/pyodide/v0.29.3/full/"
+                });
                 
-                if(bootStatus) bootStatus.innerText = "Mounting File System...";
+                if(bootStatus) bootStatus.innerText = "Fetching Graphing Libraries...";
                 
-                // This is where it crashes if Matplotlib is missing from the local folder
+                // This successfully grabs the visual packages from the cloud
                 await pyodide.loadPackage(["micropip", "matplotlib"]);
+                micropip = pyodide.pyimport("micropip");
+                
+                if(bootStatus) bootStatus.innerText = "Configuring Input Stream...";
+                await pyodide.runPythonAsync(`import builtins\nfrom js import prompt\ndef custom_input(p=""):\n val = prompt(p)\n print(f"{p}{val}")\n return val\nbuiltins.input = custom_input`);
+                pyodide.setStdout({ batched: (msg) => log(msg) });
+                
+                statusInd.className = "w-1.5 h-1.5 rounded-full bg-green-500 dark:bg-green-400 shadow-[0_0_6px_#4ade80]";
+                statusText.innerText = "Online"; statusText.className = "text-[9px] font-bold uppercase tracking-tighter text-green-600 dark:text-green-400";
+                runBtn.disabled = false; document.getElementById("mem-usage").classList.remove("hidden");
+                refreshFileList(); loadProgress();
 
-            } catch (localErr) {
-                
-                // ATTEMPT 2: Graceful Auto-Recovery (Hybrid Cloud Engine)
-                console.warn("Local files (like Matplotlib) missing! Switching to Hybrid Cloud Engine...");
-                if(bootStatus) bootStatus.innerText = "Optimizing via Cloud Engine...";
-                
-                try {
-                    // Inject Cloud Engine automatically
-                    if (typeof loadPyodide === "undefined") {
-                        await new Promise((resolve, reject) => {
-                            const script = document.createElement('script');
-                            script.src = "https://cdn.jsdelivr.net/pyodide/v0.29.3/full/pyodide.js";
-                            script.onload = resolve;
-                            script.onerror = reject;
-                            document.head.appendChild(script);
-                        });
-                    }
-                    
-                    // Boot Cloud Engine
-                    pyodide = await loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.29.3/full/" });
-                    await pyodide.loadPackage(["micropip", "matplotlib"]);
-                    
-                } catch(cloudErr) {
-                    // Total Failure (No internet)
-                    statusInd.className = "w-1.5 h-1.5 rounded-full bg-red-500"; 
-                    statusText.innerText = "Error"; 
-                    statusText.className = "text-[9px] font-bold uppercase tracking-tighter text-red-500";
-                    if(bootBtn) bootBtn.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-red-500"></i> Offline Mode';
-                    if(bootStatus) bootStatus.innerText = "System completely offline. Check connection.";
-                    setTimeout(enterStudio, 2000);
-                    return;
+                if(bootBtn) {
+                    bootBtn.innerHTML = '<div class="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_8px_#4ade80]"></div> System Ready';
+                    bootBtn.className = "w-full py-4 glass-panel rounded-2xl font-bold text-slate-800 dark:text-white flex items-center justify-center gap-3";
                 }
-            }
+                if(bootStatus) bootStatus.innerText = "Entering Workspace...";
+                
+                setTimeout(enterStudio, 800);
 
-            // Successfully Booted Sequence
-            if(bootStatus) bootStatus.innerText = "Configuring Input Stream...";
-            micropip = pyodide.pyimport("micropip");
-            await pyodide.runPythonAsync(`import builtins\nfrom js import prompt\ndef custom_input(p=""):\n val = prompt(p)\n print(f"{p}{val}")\n return val\nbuiltins.input = custom_input`);
-            pyodide.setStdout({ batched: (msg) => log(msg) });
-            
-            statusInd.className = "w-1.5 h-1.5 rounded-full bg-green-500 dark:bg-green-400 shadow-[0_0_6px_#4ade80]";
-            statusText.innerText = "Online"; statusText.className = "text-[9px] font-bold uppercase tracking-tighter text-green-600 dark:text-green-400";
-            runBtn.disabled = false; document.getElementById("mem-usage").classList.remove("hidden");
-            refreshFileList(); loadProgress();
-
-            if(bootBtn) {
-                bootBtn.innerHTML = '<div class="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_8px_#4ade80]"></div> System Ready';
-                bootBtn.className = "w-full py-4 glass-panel rounded-2xl font-bold text-slate-800 dark:text-white flex items-center justify-center gap-3";
+            } catch (err) { 
+                statusInd.className = "w-1.5 h-1.5 rounded-full bg-red-500"; statusText.innerText = "Error"; statusText.className = "text-[9px] font-bold uppercase tracking-tighter text-red-500";
+                if(bootBtn) bootBtn.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-red-500"></i> Offline Mode';
+                
+                console.error("Pyodide Load Error:", err);
+                if(bootStatus) bootStatus.innerText = "Network Error: Could not connect to Pyodide Cloud.";
+                
+                setTimeout(enterStudio, 2000);
             }
-            if(bootStatus) bootStatus.innerText = "Entering Workspace...";
-            
-            setTimeout(enterStudio, 800);
         }
 
         function handlePythonError(err) {
